@@ -11,40 +11,30 @@ from vedis import Vedis
 # Удалить токен!
 # API_TOKEN = '1600099119:AAGdPs2MBwuvHVTlEmGbslouTcNOt7txtxs'
 
-
 # тестовые структуры
-user_dict = {}
-before_backfill = {}
-test_datas = []
+data_to_write = {}
+questions = []
 dir = os.getcwd()
 
 # работа с базой данных состояний (положение пользователя в диалоге)
 db_file = "database.vdb"
 db_names = 'databasenames.vdb'
 
+
 class States(Enum):
     S_START = "0"  # Начало нового диалога
     S_CHOOSE = "1"
     S_START_CHECK = "2"
     S_GET_NAME = "3"
-# data = {'BOT_TOKEN':'1600099119:AAGdPs2MBwuvHVTlEmGbslouTcNOt7txtxs',
-#         'DOCUMENT_ID': '1agrCBLZTYY1NRRQk4wWkoD4iC4bbQ4StqCGOqmt9TgU'}
-# with open('config.pickle', 'wb') as f:
-#     pickle.dump(data, f)
 
 
-
-
-# data_u = []
-# with open('users.pickle', 'wb') as f:
-#     users = pickle.dump(data_u, f)
 with open('users.pickle', 'rb') as f:
     users = pickle.load(f)
 
 with open('config.pickle', 'rb') as f:
     config = pickle.load(f)
 
-print(users)
+# print(users)
 # print(config['BOT_TOKEN'])
 
 # подключение к боту. Токен берём из файла config
@@ -101,11 +91,6 @@ def get_name(user_id):
             #     return str(user_id)
 
 
-
-questions = read_questions_file('Чек-лист реактора перед засыпкой.csv')
-len_before = len(questions)
-
-
 class User:
     count = 0
     time = ''
@@ -120,10 +105,10 @@ class User:
 def send_welcome(message):
     if users.count(message.from_user.id) == 0:
         bot.send_message(message.from_user.id,
-            "{0} Добро пожаловать  в телеграм-бот чек-листы лаборатории! Вы не зарегистрированы. "
-            "Отправьте команду /register password, где вместо password необходимо ввести пароль."
+                         "{0} Добро пожаловать  в телеграм-бот чек-листы лаборатории! Вы не зарегистрированы. "
+                         "Отправьте команду /register password, где вместо password необходимо ввести пароль."
                          .format(message.from_user.first_name)
-        )
+                         )
         return
     else:
         bot.send_message(message.from_user.id, "{0} добро пожаловать  в телеграм-бот чек-листы лаборатории!"
@@ -147,7 +132,6 @@ def get_start(message):
 @bot.message_handler(commands=['reset'])
 def any_msg(message):
     get_start(message)
-
 
 
 @bot.message_handler(commands=['register'])
@@ -188,18 +172,22 @@ def get_name_to_db(message):
 @bot.message_handler(content_types=["text"],
                      func=lambda message: get_current_state(message.from_user.id) == States.S_START_CHECK.value)
 def any_msg(message):
-    if message.text == 'Чек-лист реактора перед засыпкой':
+    if message.text in read_questions_file('buttons.csv'):
+        global data_to_write
+        data_to_write = {}
+
         User.checklist = message.text
         timestamp = datetime.strftime(datetime.now(), "%Y.%m.%d %H:%M")
         User.time = timestamp
-        before_backfill['Время'] = timestamp
+        data_to_write['Время'] = timestamp
 
-        #bot.send_message(message.chat.id, timestamp)
-        read_questions_file('Чек-лист реактора перед засыпкой.csv')
+        # bot.send_message(message.chat.id, timestamp)
+        global questions
+        questions = read_questions_file(message.text + '.csv')
         msg = bot.reply_to(message, """\
         Ввведите ваше ФИО
         """)
-        #bot.send_message(message.chat.id, msg)
+        # bot.send_message(message.chat.id, msg)
         bot.register_next_step_handler(msg, process_name_step)
 
 
@@ -209,15 +197,19 @@ def handle_docs_photo(message):
         file_info = bot.get_file(message.document.file_id)
         downloaded_file = bot.download_file(file_info.file_path)
 
-        src = dir + '\\' + before_backfill['Введите название установки'] + '\\' + \
-              before_backfill['Введите № опыта'] + message.document.file_name
-        print(src)
+        # доделать сохранение в папку
+        create_dir = dir + '\\' + data_to_write['Введите название установки'] + '\\' + \
+              data_to_write['Введите № опыта']
+        if not os.path.exists(create_dir):
+            os.makedirs(create_dir)
+
+        src = create_dir + '\\' + message.document.file_name
+        # print(src)
         # bot.send_message(message.chat.id, src)
         with open(src, 'wb') as new_file:
             new_file.write(downloaded_file)
-
-        # bot.reply_to(message, "Пожалуй, я сохраню это")
     except Exception as e:
+        data_to_write[questions[User.count]] = 'Нет'
         bot.reply_to(message, e)
 
 
@@ -241,9 +233,13 @@ def handle_docs_photo(message):
 def process_name_step(message):
     try:
         try:
+            create_dir = dir + '\\' + data_to_write['Введите название установки'] + '\\' + \
+                         data_to_write['Введите № опыта']
+            if not os.path.exists(create_dir):
+                os.makedirs(create_dir)
             # bot.send_message(message.chat.id, len(message.photo))
             file_info = bot.get_file(message.document.file_id)
-            src = dir + '\\' + message.document.file_name
+            src = create_dir + '\\' + message.document.file_name
 
             # bot.send_message(message.chat.id, src)
             downloaded_files = bot.download_file(file_info.file_path)
@@ -255,30 +251,30 @@ def process_name_step(message):
         keyboard = types.ReplyKeyboardMarkup(True)
         callback_button1 = types.KeyboardButton(text='Да')
         callback_button2 = types.KeyboardButton(text='Нет')
+
         if User.count >= 2:
             keyboard.add(callback_button1, callback_button2)
 
-        before_backfill[questions[User.count]] = message.text
-        # test_datas.append(list(message.text))
+        data_to_write[questions[User.count]] = message.text
+
         if message.document:
-            before_backfill[questions[User.count]] = 'Да'
+            data_to_write[questions[User.count]] = 'Да'
         User.count += 1
+
         if User.count >= len(questions):
             # вносим данные в гугл таблицу
-            gspread_test.write_googlesheets(User.checklist, before_backfill)
-            # gspread_test.write_googlesheets(User.checklist, test_datas)
-            test_print(before_backfill)
+            gspread_test.write_googlesheets(User.checklist, data_to_write)
+            test_print(data_to_write)
+
         msg = bot.reply_to(message, questions[User.count], reply_markup=keyboard)
         bot.register_next_step_handler(msg, process_name_step)
 
     except Exception as e:
         bot.send_message(message.chat.id, 'Чек-лист сохранён на гугл диск '
-                              'https://docs.google.com/spreadsheets/d/'
-                              '1-W9NVryCMOYXNZAnNWvWVIeswHt_N4THIAAyMoHDQGs/edit?ts=605d99a4#gid=0')
-        # bot.reply_to(message, e)
+                                          'https://docs.google.com/spreadsheets/d/'
+                                          '1-W9NVryCMOYXNZAnNWvWVIeswHt_N4THIAAyMoHDQGs/edit?ts=605d99a4#gid=0')
         User.count = 0
         User.time = ''
-        # send_welcome(message)
         get_start(message)
 
 
@@ -287,14 +283,11 @@ def test_print(message):
         for key, val in message.items():
             out.write('{}:{}\n'.format(key, val))
 
-# bot.reply_to(message, 'выход из цикла')
-# Enable saving next step handlers to file "./.handlers-saves/step.save".
-# Delay=2 means that after any change in next step handlers (e.g. calling register_next_step_handler())
-# saving will hapen after delay 2 seconds.
-#bot.enable_save_next_step_handlers(delay=2)
 
-# Load next_step_handlers from save file (default "./.handlers-saves/step.save")
-# WARNING It will work only if enable_save_next_step_handlers was called!
-#bot.load_next_step_handlers()
-
-bot.polling()
+while True:
+    try:
+        # Данная функция запускает бесконечный опрос телеграм-бота на наличие входящих запросов
+        bot.polling()
+    except BaseException as ex:
+        datetime.time.sleep(5)
+        print("Произошла ошибка, бот был перезапущен!")
