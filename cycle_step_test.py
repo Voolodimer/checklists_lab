@@ -8,13 +8,11 @@ from datetime import datetime
 import gspread_test
 from vedis import Vedis
 
-# Удалить токен!
-# API_TOKEN = '1600099119:AAGdPs2MBwuvHVTlEmGbslouTcNOt7txtxs'
-
 # тестовые структуры
 data_to_write = {}
 questions = []
 dir = os.getcwd()
+global checklist_name
 
 # работа с базой данных состояний (положение пользователя в диалоге)
 db_file = "database.vdb"
@@ -23,7 +21,7 @@ db_names = 'databasenames.vdb'
 
 class States(Enum):
     S_START = "0"  # Начало нового диалога
-    S_CHOOSE = "1"
+    S_STATE = "1"
     S_START_CHECK = "2"
     S_GET_NAME = "3"
 
@@ -33,9 +31,6 @@ with open('users.pickle', 'rb') as f:
 
 with open('config.pickle', 'rb') as f:
     config = pickle.load(f)
-
-# print(users)
-# print(config['BOT_TOKEN'])
 
 # подключение к боту. Токен берём из файла config
 bot = telebot.TeleBot(config['BOT_TOKEN'])
@@ -100,33 +95,48 @@ class User:
         self.name = name
 
 
-# Handle '/start' and '/help'
-@bot.message_handler(commands=['start'])
-def send_welcome(message):
-    if users.count(message.from_user.id) == 0:
-        bot.send_message(message.from_user.id,
-                         "{0} Добро пожаловать  в телеграм-бот чек-листы лаборатории! Вы не зарегистрированы. "
-                         "Отправьте команду /register password, где вместо password необходимо ввести пароль."
-                         .format(message.from_user.first_name)
-                         )
-        return
-    else:
-        bot.send_message(message.from_user.id, "{0} добро пожаловать  в телеграм-бот чек-листы лаборатории!"
-                                               " Для справки по доступным командам отправьте /help в чат."
-                         .format(message.from_user.first_name))
-        set_state(message.from_user.id, States.S_START_CHECK.value)
+def send_telegram(path):
+    # url = "https://api.telegram.org/bot"
+    # url += token
+    # method_url = url + "/sendMessage"
+    path += '\\'
+    chat_id = config['PILOT_PLANT_ID']
+    media = os.listdir(path)
+    print(media)
+
+    try:
+        bot.send_media_group(chat_id, [telebot.types.InputMediaDocument(open(path + photo, 'rb')) for photo in media if
+                                       photo.endswith('png') or photo.endswith('jpg')])
+    except Exception as e:
+        print(e)
 
 
 def get_start(message):
     markup = types.ReplyKeyboardMarkup(row_width=2)
     itembtn1 = types.KeyboardButton(text='Чек-лист реактора перед засыпкой')
-    itembtn2 = types.KeyboardButton('Чек-лист реактора перед ПИ')
+    itembtn2 = types.KeyboardButton('Чек-лист реактора перед пи')
     itembtn3 = types.KeyboardButton('Чек-лист реактора перед запуском')
     itembtn4 = types.KeyboardButton('Чек-лист реактора на остановку опыта')
     itembtn5 = types.KeyboardButton('Чек-лист реактора во время режима')
     itembtn6 = types.KeyboardButton('Разрешение на запуск')
     markup.add(itembtn1, itembtn2, itembtn3, itembtn4, itembtn5, itembtn6)
     bot.send_message(message.chat.id, "Выберите чек-лист", reply_markup=markup)
+
+# Handle '/start'
+@bot.message_handler(commands=['start'])
+def send_welcome(message):
+    if users.count(message.from_user.id) == 0:
+        bot.send_message(message.from_user.id,
+                         "{0} Добро пожаловать  в телеграм-бот чек-листы лаборатории! Вы не зарегистрированы. "
+                         "Отправьте команду \'/register password\', где вместо password необходимо ввести пароль."
+                         .format(message.from_user.first_name)
+                         )
+        return
+    else:
+        bot.send_message(message.from_user.id, "{0} добро пожаловать  в телеграм-бот чек-листы лаборатории!\n"
+                                               "Для справки по доступным командам отправьте /help в чат."
+                         .format(message.from_user.first_name))
+        set_state(message.from_user.id, States.S_START_CHECK.value)
 
 
 @bot.message_handler(commands=['reset'])
@@ -140,7 +150,7 @@ def register_user(message):
     global users
     arg = message.text.split(' ')[-1]
     # print("arg " + arg)
-    if len(arg) != 0 and arg == 'rrtrrtrrt':
+    if len(arg) != 0 and arg == config['REG_PASSWORD']:
         if users.count(message.from_user.id) != 0:
             bot.send_message(message.from_user.id, 'Вы уже зарегистрированы')
         else:
@@ -159,6 +169,21 @@ def register_user(message):
         bot.send_message(message.from_user.id, 'Пароль не верный')
 
 
+@bot.message_handler(commands=['help'])
+def help(message):
+    if users.count(message.from_user.id) == 0:
+        bot.send_message(message.from_user.id,
+                         "Вы не зарегистрированы. "
+                         "Отправьте команду \'/register password\', где вместо password необходимо ввести пароль")
+        return
+    else:
+        bot.send_message(message.from_user.id, '/register - команда для регистрации пользователя для доступа к '
+                                               'чек-листам\n'
+                                               'Пример ввода: \'/register password\', где password - внутренний пароль' 
+                                               '\n'
+                                               '/reset - команда перезагрузки бота '
+                                               'в случае возникновения ошибок или сбоев')
+
 @bot.message_handler(content_types=['text'],
                      func=lambda message: get_current_state(message.from_user.id) == States.S_GET_NAME.value)
 def get_name_to_db(message):
@@ -172,6 +197,8 @@ def get_name_to_db(message):
 @bot.message_handler(content_types=["text"],
                      func=lambda message: get_current_state(message.from_user.id) == States.S_START_CHECK.value)
 def any_msg(message):
+    global checklist_name
+    checklist_name = message.text
     if message.text in read_questions_file('buttons.csv'):
         global data_to_write
         data_to_write = {}
@@ -197,11 +224,12 @@ def handle_docs_photo(message):
         file_info = bot.get_file(message.document.file_id)
         downloaded_file = bot.download_file(file_info.file_path)
 
-        # доделать сохранение в папку
+        # строим путь и создаём директорию для сохранения фото
         create_dir = dir + '\\' + data_to_write['Введите название установки'] + '\\' + \
-              data_to_write['Введите № опыта']
+              data_to_write['Введите № опыта'] + '\\' + checklist_name
         if not os.path.exists(create_dir):
             os.makedirs(create_dir)
+
 
         src = create_dir + '\\' + message.document.file_name
         # print(src)
@@ -233,8 +261,9 @@ def handle_docs_photo(message):
 def process_name_step(message):
     try:
         try:
+            global create_dir
             create_dir = dir + '\\' + data_to_write['Введите название установки'] + '\\' + \
-                         data_to_write['Введите № опыта']
+                         data_to_write['Введите № опыта'] + '\\' + checklist_name
             if not os.path.exists(create_dir):
                 os.makedirs(create_dir)
             # bot.send_message(message.chat.id, len(message.photo))
@@ -243,6 +272,7 @@ def process_name_step(message):
 
             # bot.send_message(message.chat.id, src)
             downloaded_files = bot.download_file(file_info.file_path)
+            # print(downloaded_files)
             with open(src, 'wb') as new_file:
                 new_file.write(downloaded_files)
         except Exception as e:
@@ -275,7 +305,9 @@ def process_name_step(message):
                                           '1-W9NVryCMOYXNZAnNWvWVIeswHt_N4THIAAyMoHDQGs/edit?ts=605d99a4#gid=0')
         User.count = 0
         User.time = ''
+        send_telegram(create_dir)
         get_start(message)
+
 
 
 def test_print(message):
@@ -289,5 +321,5 @@ while True:
         # Данная функция запускает бесконечный опрос телеграм-бота на наличие входящих запросов
         bot.polling()
     except BaseException as ex:
-        datetime.time.sleep(5)
+        time.sleep(5)
         print("Произошла ошибка, бот был перезапущен!")
